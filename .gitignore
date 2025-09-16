@@ -1,0 +1,57 @@
+# Configuration
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# SSL Certificates (keep only examples)
+certs/*.key
+certs/*.crt
+certs/*.pem
+!certs/*.example.*
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Monitoring data
+monitoring/grafana/data/
+monitoring/prometheus/data/
+monitoring/loki/data/
