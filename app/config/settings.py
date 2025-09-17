@@ -49,9 +49,8 @@ class Settings(BaseSettings):
         return v
 
     def load_bank_public_key(self):
-        """Load bank's public key for signature verification"""
         if not os.path.exists(self.bank_public_key_file):
-            raise FileNotFoundError(f"Bank public key file not found: {self.bank_public_key_file}")
+            raise FileNotFoundError(f"Không tìm thấy khóa công khai xác thực signature: {self.bank_public_key_file}")
         
         with open(self.bank_public_key_file, 'rb') as f:
             public_key = serialization.load_pem_public_key(f.read())

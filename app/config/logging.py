@@ -6,10 +6,7 @@ from typing import Any, Dict
 
 from app.config.settings import settings
 
-
-def setup_logging():
-    """Setup structured logging with JSON format for production"""
-    
+def setup_logging():    
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
@@ -46,7 +43,6 @@ def setup_logging():
         cache_logger_on_first_use=True,
     )
 
-
 def add_service_context(_, __, event_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Add service context to all log entries"""
     event_dict.update({
@@ -56,11 +52,8 @@ def add_service_context(_, __, event_dict: Dict[str, Any]) -> Dict[str, Any]:
     })
     return event_dict
 
-
 def get_logger(name: str = None):
     """Get configured logger instance"""
     return structlog.get_logger(name) if name else structlog.get_logger()
 
-
-# Setup logging when module is imported
 setup_logging()

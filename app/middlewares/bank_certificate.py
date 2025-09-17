@@ -13,11 +13,6 @@ logger = structlog.get_logger()
 
 
 class BankCertificateMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to verify bank's client certificate
-    Only for webhook endpoints - bank must present valid certificate
-    """
-    
     def __init__(self, app):
         super().__init__(app)
         self.trusted_bank_cert = None
