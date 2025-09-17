@@ -13,18 +13,13 @@ logger = structlog.get_logger()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """
-    Rate limiting middleware using Redis for distributed rate limiting
-    Implements sliding window counter algorithm
-    """
-    
+
     def __init__(self, app):
         super().__init__(app)
         self.redis_client = None
         self._initialize_redis()
     
     def _initialize_redis(self):
-        """Initialize Redis connection"""
         try:
             self.redis_client = redis.Redis(
                 host=settings.redis_host,
@@ -40,25 +35,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             
             # Test connection
             self.redis_client.ping()
-            logger.info("redis_connection_established", 
+            logger.info("Khởi tạo kết nối Redis thành công (_initialize_redis)", 
                        host=settings.redis_host, 
                        port=settings.redis_port)
             
         except Exception as e:
-            logger.error("redis_connection_failed", error=str(e))
+            logger.error("Khởi tạo kết nối Redis thất bại (_initialize_redis)", error=str(e))
             self.redis_client = None
     
     def _get_client_identifier(self, request: Request) -> str:
-        """
-        Get unique identifier for the client (IP address)
-        
-        Args:
-            request: FastAPI Request object
-            
-        Returns:
-            str: Client identifier for rate limiting
-        """
-        # Use the same IP detection logic as IP whitelist
+
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
             return forwarded_for.split(',')[0].strip()
@@ -76,31 +62,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
     
     def _get_redis_key(self, client_id: str, window_start: int) -> str:
-        """
-        Generate Redis key for rate limiting
-        
-        Args:
-            client_id: Client identifier
-            window_start: Start time of the current window
-            
-        Returns:
-            str: Redis key
-        """
-        return f"rate_limit:{client_id}:{window_start}"
+        return f"RateLimit:{client_id}:{window_start}"
     
     async def _check_rate_limit_redis(self, client_id: str) -> tuple[bool, int, int]:
-        """
-        Check rate limit using Redis (distributed)
-        
-        Args:
-            client_id: Client identifier
-            
-        Returns:
-            tuple: (is_allowed, current_count, reset_time)
-        """
         if not self.redis_client:
             # If Redis is not available, allow request but log warning
-            logger.warning("redis_unavailable_allowing_request")
+            logger.warning("Redis không khả dụng, cho phép yêu cầu (_check_rate_limit_redis)", client_id=client_id)
             return True, 0, int(time.time()) + settings.rate_limit_window
         
         current_time = int(time.time())
@@ -124,7 +91,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             reset_time = window_start + settings.rate_limit_window
             is_allowed = current_count <= settings.rate_limit_requests
             
-            logger.info("rate_limit_check",
+            logger.info("Kiểm tra giới hạn tốc độ (Redis) (_check_rate_limit_redis)",
                        client_id=client_id,
                        current_count=current_count,
                        limit=settings.rate_limit_requests,
@@ -134,7 +101,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return is_allowed, current_count, reset_time
             
         except Exception as e:
-            logger.error("redis_rate_limit_error", error=str(e))
+            logger.error("Lỗi giới hạn tốc độ (Redis) (_check_rate_limit_redis)", error=str(e))
             # On Redis error, allow request but log warning
             return True, 0, int(time.time()) + settings.rate_limit_window
     
@@ -142,7 +109,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     _memory_store = {}
     
     def _cleanup_memory_store(self):
-        """Clean up old entries from memory store"""
         current_time = int(time.time())
         keys_to_remove = []
         
@@ -159,15 +125,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._memory_store.pop(key, None)
     
     async def _check_rate_limit_memory(self, client_id: str) -> tuple[bool, int, int]:
-        """
-        Check rate limit using in-memory storage (fallback)
-        
-        Args:
-            client_id: Client identifier
-            
-        Returns:
-            tuple: (is_allowed, current_count, reset_time)
-        """
         current_time = int(time.time())
         window_start = current_time // settings.rate_limit_window * settings.rate_limit_window
         reset_time = window_start + settings.rate_limit_window
@@ -190,7 +147,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         is_allowed = current_count <= settings.rate_limit_requests
         
-        logger.info("rate_limit_check_memory",
+        logger.info("Kiểm tra giới hạn tốc độ (Memory) (_check_rate_limit_memory)",
                    client_id=client_id,
                    current_count=current_count,
                    limit=settings.rate_limit_requests,
@@ -200,16 +157,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return is_allowed, current_count, reset_time
     
     async def dispatch(self, request: Request, call_next):
-        """
-        Main middleware logic for rate limiting
-        
-        Args:
-            request: FastAPI Request object
-            call_next: Next middleware/handler in chain
-            
-        Returns:
-            Response object
-        """
         # Skip rate limiting for health and metrics endpoints
         if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
@@ -234,7 +181,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             
             # Check if request is allowed
             if not is_allowed:
-                logger.warning("rate_limit_exceeded",
+                logger.warning("Vượt quá giới hạn tốc độ (dispatch)",
                               client_id=client_id,
                               current_count=current_count,
                               limit=settings.rate_limit_requests,
@@ -245,7 +192,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     content={
                         "batchId": "unknown",
                         "code": "429",
-                        "message": "Rate limit exceeded",
+                        "message": "Vượt quá giới hạn tốc độ",
                         "data": []
                     }
                 )
@@ -257,13 +204,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return add_rate_limit_headers(response)
             
         except Exception as e:
-            logger.error("rate_limit_error", error=str(e), exc_info=True)
+            logger.error("Lỗi kiểm tra Rate limit", error=str(e), exc_info=True)
             return JSONResponse(
                 status_code=200,
                 content={
                     "batchId": "unknown",
                     "code": "500", 
-                    "message": "Rate limit check error",
+                    "message": "Lỗi kiểm tra Rate limit",
                     "data": []
                 }
             )

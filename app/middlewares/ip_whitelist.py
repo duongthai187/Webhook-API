@@ -11,26 +11,13 @@ logger = structlog.get_logger()
 
 
 class IPWhitelistMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to check if the client IP is in the allowed IP whitelist
-    Supports both individual IPs and CIDR network ranges
-    """
     
     def __init__(self, app):
         super().__init__(app)
         self.allowed_networks = self._parse_allowed_ips(settings.allowed_ips)
-        logger.info("ip_whitelist_initialized", allowed_networks=len(self.allowed_networks))
+        logger.info("Định nghĩa danh sách IP Whitelist thành công", allowed_networks=len(self.allowed_networks))
     
     def _parse_allowed_ips(self, allowed_ips: List[str]) -> List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]]:
-        """
-        Parse allowed IPs and convert to network objects
-        
-        Args:
-            allowed_ips: List of IP addresses and CIDR ranges
-            
-        Returns:
-            List of IPv4Network/IPv6Network objects
-        """
         networks = []
         
         for ip_str in allowed_ips:
@@ -38,23 +25,14 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
                 # Try to parse as network (supports both single IPs and CIDR)
                 network = ipaddress.ip_network(ip_str, strict=False)
                 networks.append(network)
-                logger.info("allowed_network_added", network=str(network))
+                logger.info("Đã thêm mạng mới: ", network=str(network))
             except ValueError as e:
-                logger.error("invalid_ip_in_whitelist", ip=ip_str, error=str(e))
+                logger.error("Lỗi không hợp lệ (_parse_allowed_ips)", ip=ip_str, error=str(e))
                 continue
         
         return networks
     
     def _get_client_ip(self, request: Request) -> str:
-        """
-        Get the real client IP address, considering proxy headers
-        
-        Args:
-            request: FastAPI Request object
-            
-        Returns:
-            str: Client IP address
-        """
         # Check common proxy headers in order of preference
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
@@ -77,15 +55,6 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
     
     def _is_ip_allowed(self, client_ip: str) -> bool:
-        """
-        Check if the client IP is in the allowed networks
-        
-        Args:
-            client_ip: Client IP address to check
-            
-        Returns:
-            bool: True if IP is allowed, False otherwise
-        """
         try:
             client_ip_obj = ipaddress.ip_address(client_ip)
             
@@ -94,23 +63,11 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
                     return True
             
             return False
-            
         except ValueError as e:
-            logger.error("invalid_client_ip", client_ip=client_ip, error=str(e))
+            logger.error("Lỗi không hợp lệ (_is_ip_allowed)", client_ip=client_ip, error=str(e))
             return False
     
     async def dispatch(self, request: Request, call_next):
-        """
-        Main middleware logic to check IP whitelist
-        
-        Args:
-            request: FastAPI Request object
-            call_next: Next middleware/handler in chain
-            
-        Returns:
-            Response object
-        """
-        # Skip IP check for health endpoints
         if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
 
@@ -120,7 +77,7 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
             
             # Log the request attempt
             logger.info(
-                "ip_whitelist_check",
+                "Kiểm tra IP Whitelist (dispatch)",
                 client_ip=client_ip,
                 path=request.url.path,
                 method=request.method,
@@ -130,7 +87,7 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
             # Check if IP is allowed
             if not self._is_ip_allowed(client_ip):
                 logger.warning(
-                    "ip_access_denied",
+                    "Lỗi không hợp lệ IP (dispatch)",
                     client_ip=client_ip,
                     path=request.url.path,
                     method=request.method
@@ -141,24 +98,24 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
                     content={
                         "batchId": "unknown",
                         "code": "403",
-                        "message": "Access denied: IP not allowed",
+                        "message": "IP không được phép truy cập (dispatch)",
                         "data": []
                     }
                 )
             
-            logger.info("ip_access_granted", client_ip=client_ip)
+            logger.info("Pass kiểm tra IP Whitelist (dispatch)", client_ip=client_ip)
             
             # IP is allowed, proceed to next middleware
             return await call_next(request)
             
         except Exception as e:
-            logger.error("ip_whitelist_error", error=str(e), exc_info=True)
+            logger.error("ip_whitelist_error (dispatch)", error=str(e), exc_info=True)
             return JSONResponse(
                 status_code=200,
                 content={
                     "batchId": "unknown", 
                     "code": "500",
-                    "message": "IP whitelist check error",
+                    "message": "IP whitelist check error (dispatch)",
                     "data": []
                 }
             )

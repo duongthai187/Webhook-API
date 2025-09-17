@@ -91,7 +91,7 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
             # Verify signature
             if not await self._verify_signature(payload_for_verification, signature):
                 logger.error(
-                    "signature_verification_failed",
+                    "Signature không hợp lệ (dispatch)",
                     batch_id=batch_id
                 )
                 return JSONResponse(
@@ -99,13 +99,13 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
                     content={
                         "batchId": batch_id,
                         "code": "401",
-                        "message": "Signature is not valid",
+                        "message": "Chữ ký không hợp lệ (dispatch)",
                         "data": []
                     }
                 )
             
             logger.info(
-                "signature_verified",
+                "Signature hợp lệ, tiếp tục xử lý request (dispatch)",
                 transaction_id=payload.get('transaction_id', 'unknown')
             )
             
@@ -122,7 +122,7 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
             
         except Exception as e:
-            logger.error("signature_verification_error", error=str(e), exc_info=True)
+            logger.error("Signature verification error", error=str(e), exc_info=True)
             return JSONResponse(
                 status_code=200,
                 content={

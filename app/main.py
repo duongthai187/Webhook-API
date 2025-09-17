@@ -37,7 +37,7 @@ signature_verification_total = Counter(
 )
 
 app = FastAPI(
-    title="Bank Webhook API",
+    title="Bank Webhook Notify",
     description="Secure webhook endpoint for receiving bank notifications",
     version="1.0.0",
     docs_url="/docs" if settings.reload else None,  # Disable docs in production
