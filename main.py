@@ -13,6 +13,7 @@ from app.middlewares.rate_limit import RateLimitMiddleware
 from app.middlewares.signature_verification import SignatureVerificationMiddleware
 # from app.middlewares.bank_certificate import BankCertificateMiddleware  # Optional: for cert-based auth
 from app.services.webhook_processor import WebhookProcessor
+from app.services.metrics_collector import get_metrics_collector
 from app.config.settings import settings
 
 # Initialize structured logger
@@ -65,6 +66,9 @@ app.add_middleware(SignatureVerificationMiddleware)
 
 # Initialize webhook processor
 webhook_processor = WebhookProcessor()
+
+# Initialize metrics collector
+metrics_collector = get_metrics_collector()
 
 
 @app.middleware("http")
@@ -164,6 +168,89 @@ async def get_metrics():
     )
 
 
+@app.get("/api/metrics/summary")
+async def get_metrics_summary():
+    """Get metrics summary for dashboard"""
+    try:
+        summary = metrics_collector.get_summary_stats()
+        return JSONResponse(content=summary)
+    except Exception as e:
+        logger.error("Failed to get metrics summary", error=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to get metrics summary", "detail": str(e)}
+        )
+
+
+@app.get("/api/metrics/webhooks")
+async def get_webhook_metrics(hours: int = 24, limit: int = 100):
+    """Get recent webhook metrics for dashboard"""
+    try:
+        if hours <= 1:
+            # For recent data, use in-memory cache
+            metrics = metrics_collector.get_recent_webhooks(limit=limit)
+        else:
+            # For historical data, use database
+            metrics = metrics_collector.get_webhook_metrics_from_db(hours=hours)[:limit]
+        
+        return JSONResponse(content={"metrics": metrics, "count": len(metrics)})
+    except Exception as e:
+        logger.error("Failed to get webhook metrics", error=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to get webhook metrics", "detail": str(e)}
+        )
+
+
+@app.get("/api/metrics/system")
+async def get_system_metrics(hours: int = 1):
+    """Get system metrics for dashboard"""
+    try:
+        if hours <= 1:
+            # For recent data, use in-memory cache
+            minutes = min(hours * 60, 60)
+            metrics = metrics_collector.get_recent_system_metrics(minutes=minutes)
+        else:
+            # For historical data, use database
+            metrics = metrics_collector.get_system_metrics_from_db(hours=hours)
+        
+        return JSONResponse(content={"metrics": metrics, "count": len(metrics)})
+    except Exception as e:
+        logger.error("Failed to get system metrics", error=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to get system metrics", "detail": str(e)}
+        )
+
+
+@app.get("/api/metrics/hourly")
+async def get_hourly_stats(hours: int = 24):
+    """Get hourly webhook statistics"""
+    try:
+        stats = metrics_collector.get_hourly_stats(hours=hours)
+        return JSONResponse(content={"hourly_stats": stats})
+    except Exception as e:
+        logger.error("Failed to get hourly stats", error=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to get hourly stats", "detail": str(e)}
+        )
+
+
+@app.get("/api/analysis/webhook-files")
+async def get_webhook_file_analysis():
+    """Get analysis of webhook notification files"""
+    try:
+        analysis = metrics_collector.analyze_webhook_files()
+        return JSONResponse(content={"analysis": analysis})
+    except Exception as e:
+        logger.error("Failed to analyze webhook files", error=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to analyze webhook files", "detail": str(e)}
+        )
+
+
 @app.post("/webhook/bank-notification", response_model=WebhookResponse)
 async def receive_bank_notification(
     webhook_data: WebhookRequest,
@@ -185,6 +272,8 @@ async def receive_bank_notification(
     - mTLS (configured at server level)
     """
     try:
+        start_time = datetime.now()
+        
         logger.info(
             "webhook_received",
             batch_id=webhook_data.batch_id,
@@ -246,6 +335,19 @@ async def receive_bank_notification(
             processed_count=result.get("processed_count", 0),
             failed_count=result.get("failed_count", 0),
             overall_success=overall_success
+        )
+        
+        # Record metrics for dashboard
+        process_time = (datetime.now() - start_time).total_seconds()
+        metrics_collector.record_webhook_event(
+            batch_id=webhook_data.batch_id,
+            source_app_id=webhook_data.source_app_id,
+            transaction_count=len(webhook_data.data),
+            processed_count=result.get("processed_count", 0),
+            failed_count=result.get("failed_count", 0),
+            process_time=process_time,
+            status_code=200 if overall_success else 400,
+            client_ip=request.client.host if request.client else "unknown"
         )
         
         return WebhookResponse(
