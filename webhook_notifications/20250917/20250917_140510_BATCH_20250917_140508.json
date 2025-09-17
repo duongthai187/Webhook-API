@@ -1,0 +1,43 @@
+{
+  "received_at": "2025-09-17T14:05:10.721913",
+  "batch_id": "BATCH_20250917_140508",
+  "source_app_id": "BANK_SYSTEM",
+  "timestamp": "1758092708",
+  "data": [
+    {
+      "transaction_id": "TXN_001_20250917140508",
+      "tran_refno": "REF_140508",
+      "src_account_number": "1234567890",
+      "amount": 1000000.0,
+      "balance_available": 5000000.0,
+      "trans_type": "C",
+      "notice_date_time": "2025-09-17 14:05:08",
+      "trans_time": "2025-09-17 14:05:08",
+      "trans_desc": "Test transfer from bank",
+      "ofs_account_number": "9876543210",
+      "ofs_account_name": "NGUYEN VAN TEST",
+      "ofs_bank_id": "970436",
+      "ofs_bank_name": "VIETCOMBANK",
+      "is_virtual_trans": "N",
+      "virtual_acc": null
+    },
+    {
+      "transaction_id": "TXN_002_20250917140508",
+      "tran_refno": "REF_140508_2",
+      "src_account_number": "1234567890",
+      "amount": 500000.0,
+      "balance_available": 4500000.0,
+      "trans_type": "D",
+      "notice_date_time": "2025-09-17 14:05:08",
+      "trans_time": "2025-09-17 14:05:08",
+      "trans_desc": "Test debit transaction",
+      "ofs_account_number": null,
+      "ofs_account_name": null,
+      "ofs_bank_id": null,
+      "ofs_bank_name": null,
+      "is_virtual_trans": null,
+      "virtual_acc": null
+    }
+  ],
+  "transaction_count": 2
+}

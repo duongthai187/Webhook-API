@@ -24,7 +24,7 @@ class TransactionData(BaseModel):
     virtual_acc: Optional[str] = Field(None, alias="virtualAcc", description="Tài khoản ảo")
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class WebhookRequest(BaseModel):
@@ -36,7 +36,7 @@ class WebhookRequest(BaseModel):
     data: List[TransactionData] = Field(..., description="Danh sách giao dịch")
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
@@ -50,7 +50,7 @@ class TransactionResult(BaseModel):
     additional_info: Optional[Dict[str, Any]] = Field(default_factory=dict, alias="additionalInfo", description="Thông tin bổ sung")
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
 
 class WebhookResponse(BaseModel):
@@ -61,7 +61,7 @@ class WebhookResponse(BaseModel):
     data: List[TransactionResult] = Field(..., description="Danh sách kết quả từng giao dịch")
     
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }

@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
 import time
 import uvicorn
 
@@ -17,6 +17,10 @@ from app.config.settings import settings
 
 # Initialize structured logger
 logger = structlog.get_logger()
+
+# Clear any existing metrics to prevent duplicates
+REGISTRY._collector_to_names.clear()
+REGISTRY._names_to_collectors.clear()
 
 # Prometheus metrics
 webhook_requests_total = Counter(
@@ -292,6 +296,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host=settings.host,
-        port=settings.port,
+        port=8000,  # Use HTTP port for development
         reload=settings.reload,
     )

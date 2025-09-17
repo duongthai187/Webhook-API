@@ -1,6 +1,7 @@
 import os
 from typing import List
-from pydantic import BaseSettings, field_validator
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
 from cryptography.hazmat.primitives import serialization
 
 
@@ -10,10 +11,10 @@ class Settings(BaseSettings):
     port: int = 8443
     reload: bool = False
     
-    # TLS/SSL settings
-    ssl_cert_file: str = "certs/server.crt"
-    ssl_key_file: str = "certs/server.key"
-    client_ca_file: str = "certs/ca.crt"
+    # # TLS/SSL settings
+    # ssl_cert_file: str = "certs/server.crt"
+    # ssl_key_file: str = "certs/server.key"
+    # client_ca_file: str = "certs/ca.crt"
     
     # Bank public key for signature verification
     bank_public_key_file: str = "certs/bank_public.pem"
@@ -40,13 +41,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-
-    @field_validator('allowed_ips', mode='before')
-    @classmethod
-    def parse_allowed_ips(cls, v):
-        if isinstance(v, str):
-            return [ip.strip() for ip in v.split(',') if ip.strip()]
-        return v
 
     def load_bank_public_key(self):
         if not os.path.exists(self.bank_public_key_file):

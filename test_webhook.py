@@ -1,107 +1,353 @@
 #!/usr/bin/env python3
 """
-Test script để kiểm tra webhook API
+Simple Test Script for Webhook API
+Test đơn giản cho Webhook notify
 """
-import json
+
 import requests
+import json
 import base64
+import time
+from datetime import datetime
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-import hashlib
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-def create_test_signature(payload_dict: dict, private_key_pem: str) -> str:
-    """
-    Tạo signature để test
-    """
-    # Convert dict to canonical string (same logic as server)
-    canonical_string = ""
-    def serialize_value(obj):
-        if isinstance(obj, dict):
-            items = sorted(obj.items())
-            return "{" + ",".join(f'"{k}":{serialize_value(v)}' for k, v in items) + "}"
-        elif isinstance(obj, list):
-            return "[" + ",".join(serialize_value(item) for item in obj) + "]"
-        elif isinstance(obj, str):
-            return f'"{obj}"'
-        elif isinstance(obj, bool):
-            return "true" if obj else "false"
-        elif obj is None:
-            return "null"
-        else:
-            return str(obj)
-    
-    canonical_string = serialize_value(payload_dict)
-    
-    # Load private key
-    private_key = serialization.load_pem_private_key(
-        private_key_pem.encode('utf-8'),
-        password=None,
-    )
-    
-    # Sign with SHA512withRSA
-    signature = private_key.sign(
-        canonical_string.encode('utf-8'),
-        padding.PKCS1v15(),
-        hashes.SHA512()
-    )
-    
-    # Return base64 encoded signature
-    return base64.b64encode(signature).decode('utf-8')
 
-def test_webhook_api():
-    """
-    Test webhook API với signature hợp lệ
-    """
-    # Test payload
-    test_data = {
-        "batchId": "BATCH001",
-        "transactions": [
-            {
-                "transaction_id": "TXN001",
-                "transaction_time": "2024-01-10T10:30:00Z",
-                "amount": 1000000,
-                "currency": "VND",
-                "account_number": "1234567890",
-                "account_name": "NGUYEN VAN A",
-                "description": "Transfer from bank",
-                "reference_number": "REF001",
-                "bank_code": "MB"
-            }
-        ]
-    }
+class WebhookTester:
+    def __init__(self, base_url="http://localhost:8000"):
+        self.base_url = base_url
+        self.private_key = None
+        self.setup_test_keys()
     
-    # Để test, bạn cần tạo private key thực tế
-    # Đây chỉ là ví dụ - trong thực tế bạn cần dùng private key tương ứng với public key trong server
-    private_key_example = """-----BEGIN PRIVATE KEY-----
-# BẠN CẦN THAY THẾ BẰNG PRIVATE KEY THỰC TẾ
------END PRIVATE KEY-----"""
+    def setup_test_keys(self):
+        """Tạo hoặc load test keys"""
+        try:
+            # Thử load private key có sẵn
+            with open('bank_private.pem', 'rb') as f:
+                self.private_key = serialization.load_pem_private_key(f.read(), password=None)
+            print("✅ Loaded existing private key")
+        except FileNotFoundError:
+            # Tạo key mới nếu chưa có
+            print("🔑 Generating new test keys...")
+            self.private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+            )
+            
+            # Lưu private key
+            with open('bank_private.pem', 'wb') as f:
+                f.write(self.private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption()
+                ))
+            
+            # Lưu public key vào folder certs
+            public_key = self.private_key.public_key()
+            with open('certs/bank_public.pem', 'wb') as f:
+                f.write(public_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ))
+            
+            print("✅ Generated new keys: bank_private.pem, certs/bank_public.pem")
     
-    try:
-        # Tạo signature (tạm thời skip vì cần private key thật)
-        # signature = create_test_signature(test_data, private_key_example)
+    def create_signature(self, source_app_id, batch_id, timestamp):
+        """Tạo signature theo đúng format server expect"""
+        # Canonical string: sourceAppId + batchId + timestamp
+        canonical_string = f"{source_app_id}{batch_id}{timestamp}"
         
-        # Test payload với signature
-        test_payload = {
-            **test_data,
-            "signature": "test_signature_placeholder"
-        }
-        
-        # Call API
-        response = requests.post(
-            "http://localhost:8000/api/v1/webhook/notify",
-            json=test_payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "Bank-Webhook-Test/1.0"
-            }
+        # Tạo signature với SHA512withRSA
+        signature = self.private_key.sign(
+            canonical_string.encode('utf-8'),
+            padding.PKCS1v15(),
+            hashes.SHA512()
         )
         
-        print(f"Status Code: {response.status_code}")
-        print(f"Response: {response.json()}")
+        # Return base64 encoded
+        return base64.b64encode(signature).decode('utf-8')
+    
+    def test_health(self):
+        """Test health endpoint"""
+        print("\n🔍 Testing health endpoint...")
+        try:
+            response = requests.get(f"{self.base_url}/health", timeout=10)
+            print(f"✅ Status: {response.status_code}")
+            if response.status_code == 200:
+                data = response.json()
+                print(f"✅ Response: {data}")
+                return True
+            else:
+                print(f"❌ Health check failed: {response.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Health check error: {e}")
+            return False
+    
+    def test_webhook_simple(self):
+        """Test webhook với 1 transaction đơn giản"""
+        print("\n🔍 Testing webhook with simple transaction...")
         
-    except Exception as e:
-        print(f"Test failed: {str(e)}")
+        current_time = datetime.now()
+        batch_id = f"TEST_BATCH_{current_time.strftime('%Y%m%d_%H%M%S')}"
+        source_app_id = "TEST_BANK_APP"
+        timestamp = str(int(current_time.timestamp()))
+        
+        # Tạo test payload đơn giản
+        payload = {
+            "sourceAppId": source_app_id,
+            "batchId": batch_id,
+            "timestamp": timestamp,
+            "data": [
+                {
+                    "transactionId": f"TXN_{current_time.strftime('%Y%m%d%H%M%S')}_001",
+                    "tranRefNo": f"REF_{current_time.strftime('%H%M%S')}",
+                    "srcAccountNumber": "1234567890123",
+                    "amount": 500000.0,
+                    "balanceAvailable": 2000000.0,
+                    "transType": "C",  # Credit
+                    "noticeCreatedTime": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "transTime": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "transDesc": "Test credit transaction",
+                    "ofsAccountNumber": "9876543210987",
+                    "ofsAccountName": "NGUYEN VAN TEST",
+                    "ofsBankId": "970436",
+                    "ofsBankName": "VIETCOMBANK"
+                }
+            ]
+        }
+        
+        # Tạo signature
+        signature = self.create_signature(source_app_id, batch_id, timestamp)
+        payload["signature"] = signature
+        
+        print(f"📦 Test Data:")
+        print(f"   Batch ID: {batch_id}")
+        print(f"   Transactions: {len(payload['data'])}")
+        print(f"   Signature: {signature[:30]}...")
+        
+        # Send request
+        try:
+            response = requests.post(
+                f"{self.base_url}/webhook/bank-notification",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=15
+            )
+            
+            print(f"\n📡 Response:")
+            print(f"   Status Code: {response.status_code}")
+            
+            # Hiển thị headers quan trọng
+            if 'X-Process-Time' in response.headers:
+                print(f"   Process Time: {response.headers['X-Process-Time']}s")
+            
+            if 'X-RateLimit-Remaining' in response.headers:
+                print(f"   Rate Limit Remaining: {response.headers['X-RateLimit-Remaining']}")
+            
+            # Hiển thị response body
+            if response.headers.get('content-type', '').startswith('application/json'):
+                response_data = response.json()
+                print(f"   Response Body:")
+                print(json.dumps(response_data, indent=4, ensure_ascii=False))
+                
+                # Kiểm tra kết quả
+                if response_data.get('code') == '200':
+                    print("✅ Webhook processed successfully!")
+                    return True
+                else:
+                    print(f"⚠️  Webhook processed with issues: {response_data.get('message')}")
+                    return False
+            else:
+                print(f"   Response Text: {response.text}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Request failed: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            return False
+    
+    def test_webhook_multiple_transactions(self):
+        """Test webhook với nhiều transactions"""
+        print("\n🔍 Testing webhook with multiple transactions...")
+        
+        current_time = datetime.now()
+        batch_id = f"MULTI_BATCH_{current_time.strftime('%Y%m%d_%H%M%S')}"
+        source_app_id = "MULTI_TEST_APP"
+        timestamp = str(int(current_time.timestamp()))
+        
+        # Tạo payload với 3 transactions
+        payload = {
+            "sourceAppId": source_app_id,
+            "batchId": batch_id,
+            "timestamp": timestamp,
+            "data": [
+                {
+                    "transactionId": f"TXN_{current_time.strftime('%Y%m%d%H%M%S')}_001",
+                    "tranRefNo": f"REF_{current_time.strftime('%H%M%S')}_1",
+                    "srcAccountNumber": "1111111111111",
+                    "amount": 100000.0,
+                    "balanceAvailable": 1000000.0,
+                    "transType": "C",
+                    "transDesc": "Test transaction 1"
+                },
+                {
+                    "transactionId": f"TXN_{current_time.strftime('%Y%m%d%H%M%S')}_002",
+                    "tranRefNo": f"REF_{current_time.strftime('%H%M%S')}_2",
+                    "srcAccountNumber": "2222222222222", 
+                    "amount": 200000.0,
+                    "balanceAvailable": 800000.0,
+                    "transType": "D",
+                    "transDesc": "Test transaction 2"
+                },
+                {
+                    "transactionId": f"TXN_{current_time.strftime('%Y%m%d%H%M%S')}_003",
+                    "tranRefNo": f"REF_{current_time.strftime('%H%M%S')}_3",
+                    "srcAccountNumber": "3333333333333",
+                    "amount": 300000.0,
+                    "balanceAvailable": 500000.0,
+                    "transType": "C",
+                    "transDesc": "Test transaction 3"
+                }
+            ]
+        }
+        
+        # Tạo signature
+        signature = self.create_signature(source_app_id, batch_id, timestamp)
+        payload["signature"] = signature
+        
+        print(f"📦 Multi-Transaction Test:")
+        print(f"   Batch ID: {batch_id}")
+        print(f"   Transactions: {len(payload['data'])}")
+        
+        # Send request
+        try:
+            response = requests.post(
+                f"{self.base_url}/webhook/bank-notification",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=15
+            )
+            
+            print(f"\n📡 Response: {response.status_code}")
+            
+            if response.headers.get('content-type', '').startswith('application/json'):
+                response_data = response.json()
+                print(json.dumps(response_data, indent=2, ensure_ascii=False))
+                return response_data.get('code') == '200'
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Multi-transaction test failed: {e}")
+            return False
+    
+    def test_invalid_signature(self):
+        """Test với signature không hợp lệ"""
+        print("\n🔍 Testing invalid signature...")
+        
+        payload = {
+            "sourceAppId": "INVALID_TEST",
+            "batchId": "INVALID_BATCH",
+            "timestamp": str(int(time.time())),
+            "signature": "invalid_signature_base64",
+            "data": [{
+                "transactionId": "INVALID_TXN",
+                "tranRefNo": "INVALID_REF",
+                "srcAccountNumber": "0000000000000",
+                "amount": 1000.0,
+                "transType": "C"
+            }]
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/webhook/bank-notification",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            print(f"✅ Status: {response.status_code}")
+            if response.headers.get('content-type', '').startswith('application/json'):
+                response_data = response.json()
+                print(f"✅ Expected error response: {response_data}")
+                return response_data.get('code') == '401'  # Should be unauthorized
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Invalid signature test error: {e}")
+            return False
+    
+    def run_all_tests(self):
+        """Chạy tất cả tests"""
+        print("🚀 WEBHOOK API TEST SUITE")
+        print("=" * 60)
+        print(f"🎯 Target API: {self.base_url}")
+        
+        tests = [
+            ("Health Check", self.test_health),
+            ("Simple Webhook", self.test_webhook_simple),
+            ("Multiple Transactions", self.test_webhook_multiple_transactions),
+            ("Invalid Signature", self.test_invalid_signature)
+        ]
+        
+        results = []
+        
+        for test_name, test_func in tests:
+            try:
+                print(f"\n{'='*20} {test_name} {'='*20}")
+                result = test_func()
+                results.append((test_name, result))
+                
+                if result:
+                    print(f"✅ {test_name}: PASSED")
+                else:
+                    print(f"❌ {test_name}: FAILED")
+                    
+                time.sleep(1)  # Delay giữa các tests
+                
+            except Exception as e:
+                print(f"❌ {test_name}: ERROR - {e}")
+                results.append((test_name, False))
+        
+        # Summary
+        print(f"\n{'='*60}")
+        print("📊 TEST SUMMARY:")
+        passed = sum(1 for _, result in results if result)
+        total = len(results)
+        
+        for test_name, result in results:
+            status = "✅ PASS" if result else "❌ FAIL"
+            print(f"   {test_name}: {status}")
+        
+        print(f"\n🎯 Results: {passed}/{total} tests passed")
+        
+        if passed == total:
+            print("🎉 All tests passed! Webhook API is working correctly.")
+        else:
+            print("⚠️  Some tests failed. Check the logs above for details.")
+        
+        return passed, total
+
+
+def main():
+    """Main function"""
+    print("🔧 Webhook API Tester")
+    print("Đảm bảo API đang chạy trên http://localhost:8000")
+    print("-" * 50)
+    
+    # Khởi tạo tester
+    tester = WebhookTester()
+    
+    # Chạy tất cả tests
+    passed, total = tester.run_all_tests()
+    
+    print(f"\n🏁 Testing complete: {passed}/{total} passed")
+
 
 if __name__ == "__main__":
-    print("Testing webhook API...")
-    test_webhook_api()
+    main()
