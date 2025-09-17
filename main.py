@@ -50,12 +50,15 @@ app = FastAPI(
     # redoc_url=None
 )
 
-# Add CORS middleware
+# Add CORS middleware - mostly for dashboard access, not webhook security
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://localhost"],  # Restrict to specific origins
-    allow_credentials=True,
-    allow_methods=["POST"],
+    allow_origins=[
+        "http://localhost:8501",   # Dashboard
+        "http://127.0.0.1:8501"
+    ],
+    allow_credentials=False,      # Dashboard doesn't need credentials
+    allow_methods=["GET", "POST"],  
     allow_headers=["*"],
 )
 
