@@ -140,10 +140,13 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
         
         try:
             canonical_string = self._create_canonical_string(payload)
-            
+            # print(f"   canonical_string: '{canonical_string}'")
+            # print(f"   base64_signature_length: {len(signature)} chars")
+            # print(f"   base64_signature: {signature[:50]}...")
             # Decode base64 signature
             signature_bytes = base64.b64decode(signature)
-            
+            # print(f"   raw_signature_length: {len(signature_bytes)} bytes")
+            # print(f"   raw_signature_hex: {signature_bytes.hex()[:50]}...")
             # Verify signature using SHA512withRSA
             self.bank_public_key.verify(
                 signature_bytes,

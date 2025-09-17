@@ -56,16 +56,29 @@ class WebhookTester:
         """Tạo signature theo đúng format server expect"""
         # Canonical string: sourceAppId + batchId + timestamp
         canonical_string = f"{source_app_id}{batch_id}{timestamp}"
+        # print(f"🔍 DEBUG SIGNING:")
+        # print(f"   sourceAppId: '{source_app_id}'")
+        # print(f"   batchId: '{batch_id}'")
+        # print(f"   timestamp: '{timestamp}'")
+        # print(f"   canonical_string: '{canonical_string}'")
+        # print(f"   canonical_length: {len(canonical_string)} chars")
         
         # Tạo signature với SHA512withRSA
-        signature = self.private_key.sign(
+        signature_bytes = self.private_key.sign(
             canonical_string.encode('utf-8'),
             padding.PKCS1v15(),
             hashes.SHA512()
         )
+        # print(f"   raw_signature_length: {len(signature_bytes)} bytes")
+        # print(f"   raw_signature_hex: {signature_bytes.hex()[:50]}...")
         
         # Return base64 encoded
-        return base64.b64encode(signature).decode('utf-8')
+        signature_b64 = base64.b64encode(signature_bytes).decode('utf-8')
+        # print(f"   base64_signature_length: {len(signature_b64)} chars")
+        # print(f"   base64_signature: {signature_b64[:50]}...")
+        # print()
+        
+        return signature_b64
     
     def test_health(self):
         """Test health endpoint"""
