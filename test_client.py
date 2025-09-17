@@ -97,8 +97,8 @@ def test_webhook():
         response = requests.post(
             "https://localhost:8443/webhook/bank-notification",
             json=payload,
-            cert=('certs/client.crt', 'certs/client.key'),
-            verify='certs/ca.crt',
+            cert=('certs/bank_client.crt', 'certs/bank_client.key'),  # Bank client certificate
+            verify='certs/ca.crt',  # Verify server certificate
             timeout=10
         )
         

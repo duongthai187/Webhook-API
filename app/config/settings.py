@@ -1,6 +1,6 @@
 import os
 from typing import List
-from pydantic import BaseSettings, validator
+from pydantic import BaseSettings, field_validator
 from cryptography.hazmat.primitives import serialization
 
 
@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     
     # Bank public key for signature verification
     bank_public_key_file: str = "certs/bank_public.pem"
+    
+    # Bank client certificate for authentication (optional - for 1-way cert validation)
+    bank_certificate_file: str = "certs/bank_client.crt"
     
     # Security settings
     allowed_ips: List[str] = ["127.0.0.1", "::1"]
@@ -38,7 +41,8 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = False
 
-    @validator('allowed_ips', pre=True)
+    @field_validator('allowed_ips', mode='before')
+    @classmethod
     def parse_allowed_ips(cls, v):
         if isinstance(v, str):
             return [ip.strip() for ip in v.split(',') if ip.strip()]

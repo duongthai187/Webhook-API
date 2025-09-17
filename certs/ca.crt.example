@@ -1,6 +1,0 @@
-# Example CA certificate
-# This is a placeholder file. Run generate_certs.ps1 or generate_certs.sh to create actual certificates
-#
-# -----BEGIN CERTIFICATE-----
-# [CA Certificate content will be here]
-# -----END CERTIFICATE-----

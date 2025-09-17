@@ -10,6 +10,7 @@ from app.models import WebhookRequest, WebhookResponse, TransactionResult
 from app.middlewares.ip_whitelist import IPWhitelistMiddleware
 from app.middlewares.rate_limit import RateLimitMiddleware
 from app.middlewares.signature_verification import SignatureVerificationMiddleware
+# from app.middlewares.bank_certificate import BankCertificateMiddleware  # Optional: for cert-based auth
 from app.services.webhook_processor import WebhookProcessor
 from app.config.settings import settings
 
@@ -295,6 +296,6 @@ if __name__ == "__main__":
         reload=settings.reload,
         ssl_keyfile=settings.ssl_key_file,
         ssl_certfile=settings.ssl_cert_file,
-        ssl_ca_certs=settings.client_ca_file,
-        ssl_cert_reqs=2  # CERT_REQUIRED for mutual TLS
+        # Removed mTLS - only server-side TLS
+        # Bank will connect with their certificate but we don't require client cert
     )
