@@ -1,6 +1,7 @@
 from typing import Dict, Any
 import structlog
 from datetime import datetime
+import asyncio
 
 from app.models import WebhookRequest, TransactionData
 
@@ -8,28 +9,16 @@ logger = structlog.get_logger()
 
 
 class WebhookProcessor:
-    """
-    Service to process incoming webhook notifications from bank
-    """
-    
+
     def __init__(self):
         self.processed_transactions = set()  # Simple duplicate detection
-        logger.info("webhook_processor_initialized")
+        logger.info("Khởi tạo WebhookProcessor thành công")
     
     async def process_notification(self, webhook_data: WebhookRequest) -> Dict[str, Any]:
-        """
-        Process bank notification webhook batch
-        
-        Args:
-            webhook_data: Validated webhook data from bank
-            
-        Returns:
-            Dict containing processing result
-        """
         try:
             # Log incoming notification batch
             logger.info(
-                "processing_webhook_batch",
+                "Xử lý webhook batch",
                 batch_id=webhook_data.batch_id,
                 source_app_id=webhook_data.source_app_id,
                 transaction_count=len(webhook_data.data),
@@ -45,13 +34,13 @@ class WebhookProcessor:
                     # Check for duplicate transaction
                     if await self._is_duplicate_transaction(transaction.transaction_id):
                         logger.warning(
-                            "duplicate_transaction_detected",
+                            "Phát hiện giao dịch trùng lặp, bỏ qua",
                             transaction_id=transaction.transaction_id,
                             batch_id=webhook_data.batch_id
                         )
                         failed_transactions.append({
                             "transaction_id": transaction.transaction_id,
-                            "error": "Duplicate transaction"
+                            "error": "Giao dịch trùng lặp"
                         })
                         continue
                     
@@ -59,7 +48,7 @@ class WebhookProcessor:
                     validation_result = await self._validate_transaction_data(transaction)
                     if not validation_result["valid"]:
                         logger.error(
-                            "transaction_validation_failed",
+                            "Failed_transaction_validation (process_notification)",
                             transaction_id=transaction.transaction_id,
                             batch_id=webhook_data.batch_id,
                             errors=validation_result["errors"]
@@ -138,53 +127,33 @@ class WebhookProcessor:
             }
     
     async def _is_duplicate_transaction(self, transaction_id: str) -> bool:
-        """
-        Check if transaction has already been processed
-        
-        In a production environment, this should check against a database
-        or distributed cache instead of in-memory set
-        
-        Args:
-            transaction_id: Transaction ID to check
-            
-        Returns:
-            bool: True if transaction is duplicate
-        """
         return transaction_id in self.processed_transactions
     
     async def _validate_transaction_data(self, transaction_data: TransactionData) -> Dict[str, Any]:
-        """
-        Validate incoming transaction data
-        
-        Args:
-            transaction_data: Individual transaction data to validate
-            
-        Returns:
-            Dict with validation result
-        """
+
         errors = []
         
         # Validate transaction ID format
         if not transaction_data.transaction_id or len(transaction_data.transaction_id) < 10:
-            errors.append("Invalid transaction ID format")
+            errors.append("Transaction ID không hợp lệ")
         
         # Validate amount
         if transaction_data.amount <= 0:
-            errors.append("Transaction amount must be positive")
+            errors.append("Số tiền giao dịch phải dương")
         
         # Validate account number format (basic validation)
         if not transaction_data.src_account_number or len(transaction_data.src_account_number) < 8:
-            errors.append("Invalid source account number format")
-        
+            errors.append("Định dạng số tài khoản nguồn không hợp lệ")
+
         # Validate transaction type
         valid_types = ["D", "C"]  # Debit, Credit
         if transaction_data.trans_type not in valid_types:
-            errors.append(f"Invalid transaction type. Must be one of: {', '.join(valid_types)}")
+            errors.append(f"Loại giao dịch không hợp lệ. Phải là một trong số: {', '.join(valid_types)}")
         
         # Validate balance if provided
         if transaction_data.balance_available is not None and transaction_data.balance_available < 0:
-            errors.append("Balance available cannot be negative")
-        
+            errors.append("Số dư khả dụng không được âm")
+
         return {
             "valid": len(errors) == 0,
             "errors": errors
@@ -212,7 +181,6 @@ class WebhookProcessor:
         
         try:
             # Simulate processing time
-            import asyncio
             await asyncio.sleep(0.1)  # Simulate database operations
             
             # Here you would implement actual business logic

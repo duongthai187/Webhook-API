@@ -28,31 +28,26 @@ class BankCertificateMiddleware(BaseHTTPMiddleware):
                 cert_data = f.read()
                 self.trusted_bank_cert = x509.load_pem_x509_certificate(cert_data)
             
-            logger.info("bank_certificate_loaded", 
+            logger.info("Tải chứng chỉ ngân hàng thành công", 
                        subject=str(self.trusted_bank_cert.subject),
                        issuer=str(self.trusted_bank_cert.issuer))
         except FileNotFoundError:
-            logger.warning("bank_certificate_not_found", path=bank_cert_path)
+            logger.warning("Chứng chỉ ngân hàng không tìm thấy", path=bank_cert_path)
             self.trusted_bank_cert = None
         except Exception as e:
-            logger.error("bank_certificate_load_error", error=str(e))
+            logger.error("Lỗi tải chứng chỉ ngân hàng", error=str(e))
             self.trusted_bank_cert = None
     
     async def dispatch(self, request: Request, call_next):
-        """
-        Main middleware logic to verify bank certificate
-        """
         # Only check certificate for webhook endpoints
         if not request.url.path.startswith("/webhook/"):
             return await call_next(request)
         
         try:
-            # Get client certificate from TLS connection
-            # This requires proper SSL context configuration
             client_cert = self._get_client_certificate(request)
             
             if not client_cert:
-                logger.warning("no_client_certificate_provided",
+                logger.warning("Không có chứng chỉ khách hàng (dispatch)",
                              path=request.url.path,
                              client_ip=request.client.host)
                 
@@ -61,14 +56,14 @@ class BankCertificateMiddleware(BaseHTTPMiddleware):
                     content={
                         "batchId": "unknown",
                         "code": "401",
-                        "message": "Client certificate required",
+                        "message": "Chứng chỉ khách hàng là bắt buộc",
                         "data": []
                     }
                 )
             
             # Verify certificate is from trusted bank
             if not await self._verify_bank_certificate(client_cert):
-                logger.warning("invalid_bank_certificate",
+                logger.warning("Chứng chỉ ngân hàng không hợp lệ",
                              path=request.url.path,
                              client_ip=request.client.host)
                 
@@ -131,18 +126,9 @@ class BankCertificateMiddleware(BaseHTTPMiddleware):
             return None
     
     async def _verify_bank_certificate(self, client_cert: x509.Certificate) -> bool:
-        """
-        Verify that the client certificate is from the trusted bank
-        
-        Args:
-            client_cert: Client certificate to verify
-            
-        Returns:
-            bool: True if certificate is valid and from trusted bank
-        """
         try:
             if not self.trusted_bank_cert:
-                logger.error("no_trusted_bank_certificate_available")
+                logger.error("Không có chứng chỉ ngân hàng tin cậy (_verify_bank_certificate)")
                 return False
             
             # Check if certificates match (subject, issuer, public key)
