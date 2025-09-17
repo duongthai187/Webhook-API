@@ -6,13 +6,14 @@ from datetime import datetime
 class TransactionData(BaseModel):
     """Model for individual transaction data"""
     transaction_id: str = Field(..., alias="transactionId", description="Mã giao dịch duy nhất")
+    tran_refno: str = Field(..., alias="tranRefNo", description="Số tham chiếu giao dịch")
     src_account_number: str = Field(..., alias="srcAccountNumber", description="Số tài khoản nguồn")
     amount: float = Field(..., description="Số tiền giao dịch")
     balance_available: Optional[float] = Field(None, alias="balanceAvailable", description="Số dư khả dụng")
     trans_type: str = Field(..., alias="transType", description="Loại giao dịch (D/C)")
     
     # Optional fields
-    notice_date_time: Optional[str] = Field(None, alias="noticeDateTime", description="Thời gian thông báo")
+    notice_date_time: Optional[str] = Field(None, alias="noticeCreatedTime", description="Thời gian thông báo")
     trans_time: Optional[str] = Field(None, alias="transTime", description="Thời gian giao dịch")
     trans_desc: Optional[str] = Field(None, alias="transDesc", description="Mô tả giao dịch")
     ofs_account_number: Optional[str] = Field(None, alias="ofsAccountNumber", description="Số tài khoản đối ứng")

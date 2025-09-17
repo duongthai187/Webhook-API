@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import time
+import uvicorn
 
 from app.models import WebhookRequest, WebhookResponse, TransactionResult
 from app.middlewares.ip_whitelist import IPWhitelistMiddleware
@@ -41,7 +42,7 @@ app = FastAPI(
     description="Secure webhook endpoint for receiving bank notifications",
     version="1.0.0",
     docs_url="/docs" if settings.reload else None,  # Disable docs in production
-    redoc_url=None
+    # redoc_url=None
 )
 
 # Add CORS middleware
@@ -69,7 +70,7 @@ async def add_process_time_header(request: Request, call_next):
     
     # Log incoming request
     logger.info(
-        "incoming_request",
+        "Request received",
         method=request.method,
         url=str(request.url),
         client_ip=request.client.host,
@@ -287,15 +288,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 if __name__ == "__main__":
-    import uvicorn
     
     uvicorn.run(
         "main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.reload,
-        ssl_keyfile=settings.ssl_key_file,
-        ssl_certfile=settings.ssl_cert_file,
-        # Removed mTLS - only server-side TLS
-        # Bank will connect with their certificate but we don't require client cert
     )

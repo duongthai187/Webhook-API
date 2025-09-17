@@ -2,6 +2,9 @@ from typing import Dict, Any
 import structlog
 from datetime import datetime
 import asyncio
+import json
+import os
+from pathlib import Path
 
 from app.models import WebhookRequest, TransactionData
 
@@ -12,10 +15,16 @@ class WebhookProcessor:
 
     def __init__(self):
         self.processed_transactions = set()  # Simple duplicate detection
-        logger.info("Khởi tạo WebhookProcessor thành công")
+        # Setup webhook storage directory
+        self.webhook_storage_dir = Path("webhook_notifications")
+        self.webhook_storage_dir.mkdir(exist_ok=True)
+        logger.info("Khởi tạo WebhookProcessor thành công", storage_dir=str(self.webhook_storage_dir))
     
     async def process_notification(self, webhook_data: WebhookRequest) -> Dict[str, Any]:
         try:
+            # Save webhook notification to file first
+            await self._save_webhook_to_file(webhook_data)
+            
             # Log incoming notification batch
             logger.info(
                 "Xử lý webhook batch",
@@ -63,7 +72,7 @@ class WebhookProcessor:
                     processing_result = await self._process_transaction(transaction, webhook_data.batch_id)
                     if not processing_result["success"]:
                         logger.error(
-                            "transaction_processing_failed",
+                            "Lỗi xử lý transaction (process_notification trace1)",
                             transaction_id=transaction.transaction_id,
                             batch_id=webhook_data.batch_id,
                             error=processing_result["error"]
@@ -80,7 +89,7 @@ class WebhookProcessor:
                     
                 except Exception as e:
                     logger.error(
-                        "transaction_processing_exception",
+                        "Lỗi xử lý transaction (process_notification trace2)",
                         transaction_id=transaction.transaction_id,
                         batch_id=webhook_data.batch_id,
                         error=str(e),
@@ -160,36 +169,16 @@ class WebhookProcessor:
         }
     
     async def _process_transaction(self, transaction_data: TransactionData, batch_id: str) -> Dict[str, Any]:
-        """
-        Process the validated transaction
-        
-        This is where you would implement your business logic:
-        - Update account balances
-        - Create transaction records
-        - Send notifications
-        - Update external systems
-        - etc.
-        
-        Args:
-            transaction_data: Validated transaction data
-            batch_id: Batch ID for reference
-            
-        Returns:
-            Dict with processing result
-        """
         start_time = datetime.now()
         
-        try:
-            # Simulate processing time
-            await asyncio.sleep(0.1)  # Simulate database operations
-            
+        try:            
             # Here you would implement actual business logic
             processing_result = await self._simulate_business_logic(transaction_data, batch_id)
             
             processing_time = (datetime.now() - start_time).total_seconds()
             
             logger.info(
-                "transaction_business_logic_completed",
+                "Xử lý logic hoàn tất (process_transaction)",
                 transaction_id=transaction_data.transaction_id,
                 batch_id=batch_id,
                 processing_time=processing_time,
@@ -205,7 +194,7 @@ class WebhookProcessor:
         except Exception as e:
             processing_time = (datetime.now() - start_time).total_seconds()
             logger.error(
-                "transaction_processing_error",
+                "Lỗi xử lý logic (process_transaction)",
                 transaction_id=transaction_data.transaction_id,
                 batch_id=batch_id,
                 error=str(e),
@@ -219,18 +208,6 @@ class WebhookProcessor:
             }
     
     async def _simulate_business_logic(self, transaction_data: TransactionData, batch_id: str) -> Dict[str, Any]:
-        """
-        Simulate business logic processing
-        
-        In a real implementation, this would contain your actual business logic
-        
-        Args:
-            transaction_data: Transaction data
-            batch_id: Batch ID for reference
-            
-        Returns:
-            Dict with business processing result
-        """
         # Simulate different processing based on transaction type
         if transaction_data.trans_type == "C":  # Credit
             return {
@@ -255,13 +232,67 @@ class WebhookProcessor:
             }
     
     def get_processing_stats(self) -> Dict[str, Any]:
-        """
-        Get processing statistics
-        
-        Returns:
-            Dict with processing statistics
-        """
         return {
             "total_processed": len(self.processed_transactions),
             "service_status": "healthy"
         }
+    
+    async def _save_webhook_to_file(self, webhook_data: WebhookRequest):
+        try:
+            # Create filename with timestamp and batch_id
+            timestamp = datetime.now()
+            date_folder = self.webhook_storage_dir / timestamp.strftime("%Y%m%d")
+            date_folder.mkdir(exist_ok=True)
+            
+            # Filename format: YYYYMMDD_HHMMSS_batchId.json
+            filename = f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{webhook_data.batch_id}.json"
+            file_path = date_folder / filename
+            
+            # Convert webhook data to dict for JSON serialization
+            webhook_dict = {
+                "received_at": timestamp.isoformat(),
+                "batch_id": webhook_data.batch_id,
+                "source_app_id": webhook_data.source_app_id,
+                "timestamp": webhook_data.timestamp,
+                "data": [
+                    {
+                        "transaction_id": tx.transaction_id,
+                        "tran_refno": tx.tran_refno,
+                        "src_account_number": tx.src_account_number,
+                        "amount": tx.amount,
+                        "balance_available": tx.balance_available,
+                        "trans_type": tx.trans_type,
+                        "notice_date_time": tx.notice_date_time,
+                        "trans_time": tx.trans_time,
+                        "trans_desc": tx.trans_desc,
+                        "ofs_account_number": tx.ofs_account_number,
+                        "ofs_account_name": tx.ofs_account_name,
+                        "ofs_bank_id": tx.ofs_bank_id,
+                        "ofs_bank_name": tx.ofs_bank_name,
+                        "is_virtual_trans": tx.is_virtual_trans,
+                        "virtual_acc": tx.virtual_acc
+                    }
+                    for tx in webhook_data.data
+                ],
+                "transaction_count": len(webhook_data.data)
+            }
+            
+            # Write to file with pretty formatting
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(webhook_dict, f, indent=2, ensure_ascii=False)
+            
+            logger.info(
+                "Đã lưu backup webhook notification",
+                batch_id=webhook_data.batch_id,
+                file_path=str(file_path),
+                transaction_count=len(webhook_data.data)
+            )
+            
+        except Exception as e:
+            # Don't fail the entire process if file saving fails
+            logger.error(
+                "Lỗi khi lưu backup webhook notification",
+                batch_id=getattr(webhook_data, 'batch_id', 'unknown'),
+                error=str(e),
+                exc_info=True
+            )
