@@ -53,11 +53,12 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
             if not body:
                 logger.error("empty_request_body")
                 return JSONResponse(
-                    status_code=400,
+                    status_code=200,
                     content={
-                        "success": False,
+                        "batchId": "unknown",
+                        "code": "400",
                         "message": "Empty request body",
-                        "error_code": "EMPTY_BODY"
+                        "data": []
                     }
                 )
             
@@ -67,27 +68,31 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
             except json.JSONDecodeError as e:
                 logger.error("invalid_json", error=str(e))
                 return JSONResponse(
-                    status_code=400,
+                    status_code=200,
                     content={
-                        "success": False,
+                        "batchId": "unknown",
+                        "code": "400", 
                         "message": "Invalid JSON format",
-                        "error_code": "INVALID_JSON"
+                        "data": []
                     }
                 )
+            
+            # Get batch_id for error responses
+            batch_id = payload.get('batchId', 'unknown')
             
             # Extract signature
             signature = payload.get('signature')
             if not signature:
                 logger.error("missing_signature")
                 return JSONResponse(
-                    status_code=400,
+                    status_code=200,
                     content={
-                        "success": False,
-                        "message": "Missing signature",
-                        "error_code": "MISSING_SIGNATURE"
+                        "batchId": batch_id,
+                        "code": "401",
+                        "message": "Missing signature", 
+                        "data": []
                     }
                 )
-            
             # Create payload for signature verification (exclude signature field)
             payload_for_verification = {k: v for k, v in payload.items() if k != 'signature'}
             
@@ -95,14 +100,15 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
             if not await self._verify_signature(payload_for_verification, signature):
                 logger.error(
                     "signature_verification_failed",
-                    transaction_id=payload.get('transaction_id', 'unknown')
+                    batch_id=batch_id
                 )
                 return JSONResponse(
-                    status_code=401,
+                    status_code=200,
                     content={
-                        "success": False,
-                        "message": "Invalid signature",
-                        "error_code": "INVALID_SIGNATURE"
+                        "batchId": batch_id,
+                        "code": "401",
+                        "message": "Signature is not valid",
+                        "data": []
                     }
                 )
             
@@ -126,11 +132,12 @@ class SignatureVerificationMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.error("signature_verification_error", error=str(e), exc_info=True)
             return JSONResponse(
-                status_code=500,
+                status_code=200,
                 content={
-                    "success": False,
+                    "batchId": payload.get("batchId", "unknown") if payload else "unknown",
+                    "code": "500",
                     "message": "Signature verification error",
-                    "error_code": "VERIFICATION_ERROR"
+                    "data": []
                 }
             )
     

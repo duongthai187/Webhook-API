@@ -48,20 +48,40 @@ def create_signature(payload: dict, private_key) -> str:
 
 
 def test_webhook():
-    """Test webhook endpoint"""
+    """Test webhook endpoint với cấu trúc dữ liệu mới"""
     # Load private key
     private_key = load_private_key('certs/bank_private.key')
     
-    # Tạo test payload
+    # Tạo test payload theo cấu trúc mới
     payload = {
-        "timestamp": datetime.now().isoformat(),
-        "transaction_id": "TEST123456789",
-        "account_number": "1234567890",
-        "amount": 1000000.0,
-        "currency": "VND",
-        "transaction_type": "credit",
-        "reference": "TEST-REF-123",
-        "description": "Test transaction from client"
+        "sourceAppId": "BANK_APP_001",
+        "batchId": "BATCH_" + datetime.now().strftime("%Y%m%d_%H%M%S"),
+        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "data": [
+            {
+                "transactionId": "TXN_001_" + datetime.now().strftime("%Y%m%d%H%M%S"),
+                "srcAccountNumber": "1234567890123",
+                "amount": 1000000.0,
+                "balanceAvailable": 5000000.0,
+                "transType": "C",
+                "noticeDateTime": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "transTime": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "transDesc": "Test credit transaction",
+                "ofsAccountNumber": "9876543210987",
+                "ofsAccountName": "Test Account",
+                "isVirtualTrans": "N"
+            },
+            {
+                "transactionId": "TXN_002_" + datetime.now().strftime("%Y%m%d%H%M%S"),
+                "srcAccountNumber": "1234567890123", 
+                "amount": 500000.0,
+                "balanceAvailable": 4500000.0,
+                "transType": "D",
+                "noticeDateTime": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "transTime": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "transDesc": "Test debit transaction"
+            }
+        ]
     }
     
     # Tạo signature

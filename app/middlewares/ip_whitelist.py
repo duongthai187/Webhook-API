@@ -113,38 +113,52 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         # Skip IP check for health endpoints
         if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
-        
-        # Get client IP
-        client_ip = self._get_client_ip(request)
-        
-        # Log the request attempt
-        logger.info(
-            "ip_whitelist_check",
-            client_ip=client_ip,
-            path=request.url.path,
-            method=request.method,
-            user_agent=request.headers.get("user-agent", "")
-        )
-        
-        # Check if IP is allowed
-        if not self._is_ip_allowed(client_ip):
-            logger.warning(
-                "ip_access_denied",
+
+        try:
+            # Get client IP
+            client_ip = self._get_client_ip(request)
+            
+            # Log the request attempt
+            logger.info(
+                "ip_whitelist_check",
                 client_ip=client_ip,
                 path=request.url.path,
-                method=request.method
+                method=request.method,
+                user_agent=request.headers.get("user-agent", "")
             )
             
+            # Check if IP is allowed
+            if not self._is_ip_allowed(client_ip):
+                logger.warning(
+                    "ip_access_denied",
+                    client_ip=client_ip,
+                    path=request.url.path,
+                    method=request.method
+                )
+                
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "batchId": "unknown",
+                        "code": "403",
+                        "message": "Access denied: IP not allowed",
+                        "data": []
+                    }
+                )
+            
+            logger.info("ip_access_granted", client_ip=client_ip)
+            
+            # IP is allowed, proceed to next middleware
+            return await call_next(request)
+            
+        except Exception as e:
+            logger.error("ip_whitelist_error", error=str(e), exc_info=True)
             return JSONResponse(
-                status_code=403,
+                status_code=200,
                 content={
-                    "success": False,
-                    "message": "Access denied: IP not allowed",
-                    "error_code": "IP_NOT_ALLOWED"
+                    "batchId": "unknown", 
+                    "code": "500",
+                    "message": "IP whitelist check error",
+                    "data": []
                 }
             )
-        
-        logger.info("ip_access_granted", client_ip=client_ip)
-        
-        # IP is allowed, proceed to next middleware
-        return await call_next(request)

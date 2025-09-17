@@ -348,6 +348,44 @@ docker-compose logs webhook-api | grep "signature_verification"
 5. **Set up backup** cho Redis data và certificates
 6. **Monitor resource usage** và set up alerts
 
+## Updates & Changes
+
+### Response Format Update (Latest)
+
+API response format đã được cập nhật để tuân thủ yêu cầu từ ngân hàng:
+
+**Previous Format:**
+```json
+{
+  "success": true,
+  "message": "Transactions processed successfully",
+  "batch_id": "BATCH001",
+  "processed_transactions": [...]
+}
+```
+
+**New Bank-Compliant Format:**
+```json
+{
+  "batchId": "BATCH001", 
+  "code": "200",
+  "message": "Success",
+  "data": [...]
+}
+```
+
+**Error Response Format:**
+```json
+{
+  "batchId": "BATCH001",
+  "code": "401", 
+  "message": "Signature is not valid",
+  "data": []
+}
+```
+
+Tất cả error responses từ middlewares (signature verification, IP whitelist, rate limiting) đã được cập nhật theo format này.
+
 ### Environment Variables
 
 ```env

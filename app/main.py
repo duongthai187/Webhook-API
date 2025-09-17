@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import time
 
-from app.models import WebhookRequest, WebhookResponse
+from app.models import WebhookRequest, WebhookResponse, TransactionResult
 from app.middlewares.ip_whitelist import IPWhitelistMiddleware
 from app.middlewares.rate_limit import RateLimitMiddleware
 from app.middlewares.signature_verification import SignatureVerificationMiddleware
@@ -147,49 +147,98 @@ async def receive_bank_notification(
     try:
         logger.info(
             "webhook_received",
-            transaction_id=webhook_data.transaction_id,
-            amount=webhook_data.amount,
-            account_number=webhook_data.account_number,
-            transaction_type=webhook_data.transaction_type
+            batch_id=webhook_data.batch_id,
+            source_app_id=webhook_data.source_app_id,
+            transaction_count=len(webhook_data.data),
+            timestamp=webhook_data.timestamp
         )
         
         # Process webhook data
         result = await webhook_processor.process_notification(webhook_data)
         
-        if result["success"]:
-            logger.info(
-                "webhook_processed_successfully",
-                transaction_id=webhook_data.transaction_id
-            )
+        # Create response data array với kết quả từng transaction
+        response_data = []
+        
+        # Xử lý các transaction thành công
+        for transaction in webhook_data.data:
+            transaction_found = False
             
-            return WebhookResponse(
-                success=True,
-                message="Notification processed successfully",
-                transaction_id=webhook_data.transaction_id
-            )
-        else:
-            logger.error(
-                "webhook_processing_failed",
-                transaction_id=webhook_data.transaction_id,
-                error=result.get("error", "Unknown error")
-            )
+            # Kiểm tra nếu transaction bị failed
+            for failed_tx in result.get("failed_transactions", []):
+                if failed_tx["transaction_id"] == transaction.transaction_id:
+                    # Determine error code based on error type
+                    error_code = "04"  # Default: thất bại có lý do
+                    additional_info = {"error_detail": failed_tx["error"]}
+                    
+                    if "Duplicate transaction" in failed_tx["error"]:
+                        error_code = "02"  # Thất bại không chi tiết
+                        additional_info = {"reason": "duplicate_transaction"}
+                    elif "Validation failed" in failed_tx["error"]:
+                        error_code = "04"  # Thất bại có lý do
+                        additional_info = {"validation_errors": failed_tx["error"]}
+                    
+                    response_data.append({
+                        "transactionId": transaction.transaction_id,
+                        "errorCode": error_code,
+                        "description": failed_tx["error"],
+                        "additionalInfo": additional_info
+                    })
+                    transaction_found = True
+                    break
             
-            raise HTTPException(
-                status_code=422,
-                detail=f"Processing failed: {result.get('error', 'Unknown error')}"
-            )
+            # Nếu không có trong failed list, nghĩa là thành công
+            if not transaction_found:
+                response_data.append({
+                    "transactionId": transaction.transaction_id,
+                    "errorCode": "01",  # Thành công
+                    "description": "Transaction processed successfully",
+                    "additionalInfo": {}
+                })
+        
+        # Determine overall response code
+        overall_success = result["success"]
+        response_code = "200" if overall_success else "400"
+        response_message = "Success" if overall_success else "Some transactions failed"
+        
+        logger.info(
+            "webhook_processed",
+            batch_id=webhook_data.batch_id,
+            processed_count=result.get("processed_count", 0),
+            failed_count=result.get("failed_count", 0),
+            overall_success=overall_success
+        )
+        
+        return WebhookResponse(
+            batch_id=webhook_data.batch_id,
+            code=response_code,
+            message=response_message,
+            data=response_data
+        )
             
     except Exception as e:
         logger.error(
             "webhook_error",
-            transaction_id=getattr(webhook_data, 'transaction_id', 'unknown'),
+            batch_id=getattr(webhook_data, 'batch_id', 'unknown'),
             error=str(e),
             exc_info=True
         )
         
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error"
+        # Return error response in required format
+        error_data = []
+        if hasattr(webhook_data, 'data'):
+            for transaction in webhook_data.data:
+                error_data.append({
+                    "transactionId": transaction.transaction_id,
+                    "errorCode": "02",  # Thất bại không chi tiết
+                    "description": "Internal server error",
+                    "additionalInfo": {"error": "system_error"}
+                })
+        
+        return WebhookResponse(
+            batch_id=getattr(webhook_data, 'batch_id', 'unknown'),
+            code="500",
+            message="Internal server error",
+            data=error_data
         )
 
 
@@ -204,6 +253,28 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         method=request.method
     )
     
+    # For webhook endpoints, return in required format
+    if request.url.path.startswith("/webhook/"):
+        # Try to get batch_id from request if possible
+        batch_id = "unknown"
+        try:
+            if request.method == "POST":
+                # This is a simplified approach - in real scenario you might need to parse body
+                batch_id = "error_batch"
+        except:
+            pass
+            
+        return JSONResponse(
+            status_code=200,  # Always return 200 for webhook responses as per bank requirement
+            content={
+                "batchId": batch_id,
+                "code": str(exc.status_code),
+                "message": exc.detail,
+                "data": []
+            }
+        )
+    
+    # For other endpoints, return standard format
     return JSONResponse(
         status_code=exc.status_code,
         content={

@@ -214,43 +214,56 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
         
-        # Get client identifier
-        client_id = self._get_client_identifier(request)
-        
-        # Check rate limit (prefer Redis, fallback to memory)
-        if self.redis_client:
-            is_allowed, current_count, reset_time = await self._check_rate_limit_redis(client_id)
-        else:
-            is_allowed, current_count, reset_time = await self._check_rate_limit_memory(client_id)
-        
-        # Add rate limit headers
-        def add_rate_limit_headers(response):
-            response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
-            response.headers["X-RateLimit-Remaining"] = str(max(0, settings.rate_limit_requests - current_count))
-            response.headers["X-RateLimit-Reset"] = str(reset_time)
-            response.headers["X-RateLimit-Window"] = str(settings.rate_limit_window)
-            return response
-        
-        # Check if request is allowed
-        if not is_allowed:
-            logger.warning("rate_limit_exceeded",
-                          client_id=client_id,
-                          current_count=current_count,
-                          limit=settings.rate_limit_requests,
-                          path=request.url.path)
+        try:
+            # Get client identifier
+            client_id = self._get_client_identifier(request)
             
-            response = JSONResponse(
-                status_code=429,
+            # Check rate limit (prefer Redis, fallback to memory)
+            if self.redis_client:
+                is_allowed, current_count, reset_time = await self._check_rate_limit_redis(client_id)
+            else:
+                is_allowed, current_count, reset_time = await self._check_rate_limit_memory(client_id)
+            
+            # Add rate limit headers
+            def add_rate_limit_headers(response):
+                response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
+                response.headers["X-RateLimit-Remaining"] = str(max(0, settings.rate_limit_requests - current_count))
+                response.headers["X-RateLimit-Reset"] = str(reset_time)
+                response.headers["X-RateLimit-Window"] = str(settings.rate_limit_window)
+                return response
+            
+            # Check if request is allowed
+            if not is_allowed:
+                logger.warning("rate_limit_exceeded",
+                              client_id=client_id,
+                              current_count=current_count,
+                              limit=settings.rate_limit_requests,
+                              path=request.url.path)
+                
+                response = JSONResponse(
+                    status_code=200,
+                    content={
+                        "batchId": "unknown",
+                        "code": "429",
+                        "message": "Rate limit exceeded",
+                        "data": []
+                    }
+                )
+                
+                return add_rate_limit_headers(response)
+            
+            # Request is allowed, proceed
+            response = await call_next(request)
+            return add_rate_limit_headers(response)
+            
+        except Exception as e:
+            logger.error("rate_limit_error", error=str(e), exc_info=True)
+            return JSONResponse(
+                status_code=200,
                 content={
-                    "success": False,
-                    "message": "Rate limit exceeded",
-                    "error_code": "RATE_LIMIT_EXCEEDED",
-                    "retry_after": reset_time - int(time.time())
+                    "batchId": "unknown",
+                    "code": "500", 
+                    "message": "Rate limit check error",
+                    "data": []
                 }
             )
-            
-            return add_rate_limit_headers(response)
-        
-        # Request is allowed, proceed
-        response = await call_next(request)
-        return add_rate_limit_headers(response)
