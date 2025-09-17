@@ -68,17 +68,50 @@ webhook_processor = WebhookProcessor()
 
 
 @app.middleware("http")
+async def add_proxy_headers(request: Request, call_next):
+    """Handle reverse proxy headers for production deployment"""
+    # Handle reverse proxy headers
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto:
+        request.scope["scheme"] = forwarded_proto
+    
+    forwarded_host = request.headers.get("X-Forwarded-Host")
+    if forwarded_host:
+        port = 443 if forwarded_proto == "https" else 80
+        request.scope["server"] = (forwarded_host, port)
+    
+    # Get real client IP from proxy headers
+    real_ip = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
+        request.headers.get("X-Real-IP") or
+        request.client.host if request.client else "unknown"
+    )
+    
+    # Update client info for downstream middlewares
+    if request.client:
+        # Store original client info
+        request.scope["client"] = (real_ip, request.client.port)
+    
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     """Add processing time and logging middleware"""
     start_time = time.time()
+    
+    # Get real client IP (after proxy middleware processing)
+    client_ip = request.client.host if request.client else "unknown"
     
     # Log incoming request
     logger.info(
         "Request received",
         method=request.method,
         url=str(request.url),
-        client_ip=request.client.host,
-        user_agent=request.headers.get("user-agent", "")
+        client_ip=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+        forwarded_proto=request.headers.get("X-Forwarded-Proto"),
+        forwarded_host=request.headers.get("X-Forwarded-Host")
     )
     
     response = await call_next(request)
@@ -105,7 +138,8 @@ async def add_process_time_header(request: Request, call_next):
         method=request.method,
         url=str(request.url),
         status_code=response.status_code,
-        process_time=process_time
+        process_time=process_time,
+        client_ip=client_ip
     )
     
     return response
@@ -292,10 +326,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 if __name__ == "__main__":
-    
+    # Production configuration for reverse proxy deployment
     uvicorn.run(
         "main:app",
-        host=settings.host,
-        port=8000,  # Use HTTP port for development
-        reload=settings.reload,
+        host="127.0.0.1",  # Only bind to localhost for security (behind reverse proxy)
+        port=8443,         # HTTP port (reverse proxy handles HTTPS)
+        reload=False,      # Production mode
+        access_log=False,  # Use structured logging instead
+        server_header=False,  # Hide server info
+        date_header=False     # Hide date header
     )

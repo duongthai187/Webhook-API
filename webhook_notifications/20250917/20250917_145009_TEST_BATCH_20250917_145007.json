@@ -1,0 +1,26 @@
+{
+  "received_at": "2025-09-17T14:50:09.273032",
+  "batch_id": "TEST_BATCH_20250917_145007",
+  "source_app_id": "TEST_BANK_APP",
+  "timestamp": "1758095407",
+  "data": [
+    {
+      "transaction_id": "TXN_20250917145007_001",
+      "tran_refno": "REF_145007",
+      "src_account_number": "1234567890123",
+      "amount": 500000.0,
+      "balance_available": 2000000.0,
+      "trans_type": "C",
+      "notice_date_time": "2025-09-17 14:50:07",
+      "trans_time": "2025-09-17 14:50:07",
+      "trans_desc": "Test credit transaction",
+      "ofs_account_number": "9876543210987",
+      "ofs_account_name": "NGUYEN VAN TEST",
+      "ofs_bank_id": "970436",
+      "ofs_bank_name": "VIETCOMBANK",
+      "is_virtual_trans": null,
+      "virtual_acc": null
+    }
+  ],
+  "transaction_count": 1
+}
