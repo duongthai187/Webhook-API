@@ -33,14 +33,29 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         return networks
     
     def _get_client_ip(self, request: Request) -> str:
+        # Debug: Log all headers to see what we receive
+        logger.info(
+            "DEBUG Headers received",
+            x_forwarded_for=request.headers.get("X-Forwarded-For"),
+            x_real_ip=request.headers.get("X-Real-IP"),
+            forwarded=request.headers.get("Forwarded"),
+            x_forwarded_proto=request.headers.get("X-Forwarded-Proto"),
+            x_forwarded_host=request.headers.get("X-Forwarded-Host"),
+            direct_client=request.client.host if request.client else "unknown",
+            all_headers=dict(request.headers)
+        )
+        
         # Check common proxy headers in order of preference
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
-            # X-Forwarded-For can contain multiple IPs, take the first one
-            return forwarded_for.split(',')[0].strip()
+            # X-Forwarded-For can contain multiple IPs, take the first one (original client)
+            original_ip = forwarded_for.split(',')[0].strip()
+            logger.info("Found X-Forwarded-For", original_ip=original_ip, full_header=forwarded_for)
+            return original_ip
         
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
+            logger.info("Found X-Real-IP", real_ip=real_ip.strip())
             return real_ip.strip()
         
         forwarded = request.headers.get("Forwarded")
@@ -49,10 +64,18 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
             # Format: for=192.0.2.60;proto=http;by=203.0.113.43
             for part in forwarded.split(';'):
                 if part.strip().startswith('for='):
-                    return part.strip().split('=')[1].strip('"')
+                    forwarded_ip = part.strip().split('=')[1].strip('"')
+                    logger.info("Found Forwarded header", forwarded_ip=forwarded_ip)
+                    return forwarded_ip
         
         # Fall back to direct connection IP
-        return request.client.host if request.client else "unknown"
+        direct_ip = request.client.host if request.client else "unknown"
+        logger.warning(
+            "No proxy headers found, using direct IP", 
+            direct_ip=direct_ip,
+            note="This might be local IP if behind NAT/proxy without proper headers"
+        )
+        return direct_ip
     
     def _is_ip_allowed(self, client_ip: str) -> bool:
         try:
