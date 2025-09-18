@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 
 class WebhookTester:
-    def __init__(self, base_url="http://14.224.192.52:8443"):
+    def __init__(self, base_url="https://14.224.192.52"):
         self.base_url = base_url
         self.private_key = None
         self.setup_test_keys()
@@ -84,7 +84,7 @@ class WebhookTester:
         """Test health endpoint"""
         print("\n🔍 Testing health endpoint...")
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=10)
+            response = requests.get(f"{self.base_url}/health", timeout=10, verify=False)
             print(f"✅ Status: {response.status_code}")
             if response.status_code == 200:
                 data = response.json()
@@ -145,7 +145,8 @@ class WebhookTester:
                 f"{self.base_url}/webhook/bank-notification",
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15
+                timeout=15,
+                verify=False  # Bỏ verify SSL cho test local/self-signed
             )
             
             print(f"\n📡 Response:")
@@ -241,7 +242,8 @@ class WebhookTester:
                 f"{self.base_url}/webhook/bank-notification",
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15
+                timeout=15,
+                verify=False  # Bỏ verify SSL cho test local/self-signed
             )
             
             print(f"\n📡 Response: {response.status_code}")
@@ -280,7 +282,8 @@ class WebhookTester:
                 f"{self.base_url}/webhook/bank-notification",
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=10
+                timeout=10,
+                verify=False  # Bỏ verify SSL cho test local/self-signed
             )
             
             print(f"✅ Status: {response.status_code}")

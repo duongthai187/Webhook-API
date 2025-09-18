@@ -23,7 +23,21 @@ class Settings(BaseSettings):
     bank_certificate_file: str = "certs/bank_client.crt"
     
     # Security settings
-    allowed_ips: List[str] = ["127.0.0.1", "::1"]
+    allowed_ips: List[str] = [
+        "127.0.0.1",           # Localhost
+        "::1",                 # IPv6 localhost  
+        "192.168.100.0/24",    # Internal LAN network (includes your 192.168.100.1)
+        
+        # Your public IP (for reference, but server won't see this directly)
+        # "16.25.225.51",      # Your public IP 
+        
+        # When testing from external, server might see these IPs:
+        "192.168.100.1",       # Your machine IP
+        "192.168.100.160",     # Server machine IP
+        
+        # Bank IP ranges (add when known):
+        # "203.113.185.0/24",  # Example bank IP range
+    ]
     
     # Rate limiting (requests per minute per IP)
     rate_limit_requests: int = 60
