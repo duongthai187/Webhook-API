@@ -74,32 +74,32 @@ webhook_processor = WebhookProcessor()
 metrics_collector = get_metrics_collector()
 
 
-@app.middleware("http")
-async def add_proxy_headers(request: Request, call_next):
-    """Handle reverse proxy headers for production deployment"""
-    # Handle reverse proxy headers
-    forwarded_proto = request.headers.get("X-Forwarded-Proto")
-    if forwarded_proto:
-        request.scope["scheme"] = forwarded_proto
+# @app.middleware("http")
+# async def add_proxy_headers(request: Request, call_next):
+#     """Handle reverse proxy headers for production deployment"""
+#     # Handle reverse proxy headers
+#     forwarded_proto = request.headers.get("X-Forwarded-Proto")
+#     if forwarded_proto:
+#         request.scope["scheme"] = forwarded_proto
     
-    forwarded_host = request.headers.get("X-Forwarded-Host")
-    if forwarded_host:
-        port = 443 if forwarded_proto == "https" else 80
-        request.scope["server"] = (forwarded_host, port)
+#     forwarded_host = request.headers.get("X-Forwarded-Host")
+#     if forwarded_host:
+#         port = 443 if forwarded_proto == "https" else 80
+#         request.scope["server"] = (forwarded_host, port)
     
-    # Get real client IP from proxy headers
-    real_ip = (
-        request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
-        request.headers.get("X-Real-IP") or
-        request.client.host if request.client else "unknown"
-    )
+#     # Get real client IP from proxy headers
+#     real_ip = (
+#         request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
+#         request.headers.get("X-Real-IP") or
+#         request.client.host if request.client else "unknown"
+#     )
     
-    # Update client info for downstream middlewares
-    if request.client:
-        # Store original client info
-        request.scope["client"] = (real_ip, request.client.port)
+#     # Update client info for downstream middlewares
+#     if request.client:
+#         # Store original client info
+#         request.scope["client"] = (real_ip, request.client.port)
     
-    return await call_next(request)
+#     return await call_next(request)
 
 
 @app.middleware("http")
@@ -427,17 +427,4 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "message": exc.detail,
             "timestamp": datetime.now().isoformat()
         }
-    )
-
-
-if __name__ == "__main__":
-    # Production configuration for reverse proxy deployment
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",  # Only bind to localhost for security (behind reverse proxy)
-        port=8443,         # HTTP port (reverse proxy handles HTTPS)
-        reload=False,      # Production mode
-        access_log=False,  # Use structured logging instead
-        server_header=False,  # Hide server info
-        date_header=False     # Hide date header
     )
