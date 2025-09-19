@@ -78,17 +78,18 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         return direct_ip
     
     def _is_ip_allowed(self, client_ip: str) -> bool:
-        try:
-            client_ip_obj = ipaddress.ip_address(client_ip)
+        # try:
+        #     client_ip_obj = ipaddress.ip_address(client_ip)
             
-            for network in self.allowed_networks:
-                if client_ip_obj in network:
-                    return True
+        #     for network in self.allowed_networks:
+        #         if client_ip_obj in network:
+        #             return True
             
-            return False
-        except ValueError as e:
-            logger.error("Lỗi không hợp lệ (_is_ip_allowed)", client_ip=client_ip, error=str(e))
-            return False
+        #     return False
+        # except ValueError as e:
+        #     logger.error("Lỗi không hợp lệ (_is_ip_allowed)", client_ip=client_ip, error=str(e))
+        #     return False
+        return True
     
     async def dispatch(self, request: Request, call_next):
         if request.url.path in ["/health", "/metrics"]:
