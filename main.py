@@ -67,8 +67,8 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(IPWhitelistMiddleware)
 app.add_middleware(SignatureVerificationMiddleware)
 
-# Initialize webhook processor
-webhook_processor = WebhookProcessor()
+# Initialize webhook processor with database path
+webhook_processor = WebhookProcessor(db_path="webhook_metrics.db")
 
 # Initialize metrics collector
 metrics_collector = get_metrics_collector()
@@ -385,6 +385,44 @@ async def receive_bank_notification(
             message="Internal server error",
             data=error_data
         )
+
+
+@app.get("/admin/processed-transactions/stats")
+async def get_processed_transactions_stats():
+    """Get statistics about processed transactions"""
+    try:
+        stats = webhook_processor.get_processing_stats()
+        return {
+            "success": True,
+            "data": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error("Error getting processed transactions stats", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/admin/processed-transactions/cleanup")
+async def cleanup_processed_transactions(days_to_keep: int = 30):
+    """Clean up old processed transactions"""
+    try:
+        if days_to_keep < 1:
+            raise HTTPException(status_code=400, detail="days_to_keep must be >= 1")
+            
+        await webhook_processor.cleanup_old_processed_transactions(days_to_keep)
+        
+        # Get updated stats
+        stats = webhook_processor.get_processing_stats()
+        
+        return {
+            "success": True,
+            "message": f"Cleaned up transactions older than {days_to_keep} days",
+            "updated_stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error("Error cleaning up processed transactions", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.exception_handler(HTTPException)

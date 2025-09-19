@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 
 class WebhookTester:
-    def __init__(self, base_url="https://14.224.192.52"):
+    def __init__(self, base_url="http://localhost:8443"):
         self.base_url = base_url
         self.private_key = None
         self.setup_test_keys()

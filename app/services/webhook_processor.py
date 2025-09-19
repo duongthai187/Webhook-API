@@ -1,9 +1,10 @@
 from typing import Dict, Any
 import structlog
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 from app.models import WebhookRequest, TransactionData
@@ -13,12 +14,99 @@ logger = structlog.get_logger()
 
 class WebhookProcessor:
 
-    def __init__(self):
-        self.processed_transactions = set()  # Simple duplicate detection
+    def __init__(self, db_path: str = "webhook_metrics.db"):
+        self.db_path = db_path
+        self.processed_transactions = set()  # In-memory cache for fast lookup
         # Setup webhook storage directory
         self.webhook_storage_dir = Path("webhook_notifications")
         self.webhook_storage_dir.mkdir(exist_ok=True)
-        logger.info("Khởi tạo WebhookProcessor thành công", storage_dir=str(self.webhook_storage_dir))
+        
+        # Initialize persistent storage for processed transactions
+        self._init_processed_transactions_db()
+        
+        # Load processed transactions from database into memory
+        self._load_processed_transactions()
+        
+        logger.info("Khởi tạo WebhookProcessor thành công", 
+                   storage_dir=str(self.webhook_storage_dir),
+                   loaded_transactions=len(self.processed_transactions))
+    
+    def _init_processed_transactions_db(self):
+        """Initialize database table for storing processed transaction IDs"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Table to track processed transactions with cleanup capability
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS processed_transactions (
+                    transaction_id TEXT PRIMARY KEY,
+                    processed_at TEXT NOT NULL,
+                    batch_id TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Index for performance
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_processed_transactions_processed_at 
+                ON processed_transactions(processed_at)
+            ''')
+            
+            conn.commit()
+            conn.close()
+            logger.info("Database table 'processed_transactions' đã được khởi tạo")
+            
+        except Exception as e:
+            logger.error("Lỗi khởi tạo database table processed_transactions", error=str(e))
+            raise
+    
+    def _load_processed_transactions(self):
+        """Load processed transaction IDs from database into memory cache"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Load transactions processed in last 30 days (configurable)
+            cutoff_date = (datetime.now() - timedelta(days=30)).isoformat()
+            
+            cursor.execute('''
+                SELECT transaction_id FROM processed_transactions 
+                WHERE processed_at >= ? 
+                ORDER BY processed_at DESC
+            ''', (cutoff_date,))
+            
+            rows = cursor.fetchall()
+            self.processed_transactions = {row[0] for row in rows}
+            
+            conn.close()
+            logger.info(f"Đã load {len(self.processed_transactions)} processed transactions từ database")
+            
+        except Exception as e:
+            logger.error("Lỗi load processed transactions từ database", error=str(e))
+            self.processed_transactions = set()  # Fallback to empty set
+    
+    async def _save_processed_transaction(self, transaction_id: str, batch_id: str):
+        """Save processed transaction ID to database for persistence"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO processed_transactions 
+                (transaction_id, processed_at, batch_id) 
+                VALUES (?, ?, ?)
+            ''', (transaction_id, datetime.now().isoformat(), batch_id))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            logger.error("Lỗi lưu processed transaction vào database", 
+                        transaction_id=transaction_id, 
+                        batch_id=batch_id,
+                        error=str(e))
+            # Don't raise exception to avoid breaking the main process
     
     async def process_notification(self, webhook_data: WebhookRequest) -> Dict[str, Any]:
         try:
@@ -83,8 +171,9 @@ class WebhookProcessor:
                         })
                         continue
                     
-                    # Mark transaction as processed
+                    # Mark transaction as processed - save to both memory and database
                     self.processed_transactions.add(transaction.transaction_id)
+                    await self._save_processed_transaction(transaction.transaction_id, webhook_data.batch_id)
                     processed_count += 1
                     
                 except Exception as e:
@@ -137,6 +226,82 @@ class WebhookProcessor:
     
     async def _is_duplicate_transaction(self, transaction_id: str) -> bool:
         return transaction_id in self.processed_transactions
+    
+    async def cleanup_old_processed_transactions(self, days_to_keep: int = 30):
+        """Clean up old processed transaction records to prevent database bloat"""
+        try:
+            cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
+            
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Count records to be deleted
+            cursor.execute('''
+                SELECT COUNT(*) FROM processed_transactions 
+                WHERE processed_at < ?
+            ''', (cutoff_date,))
+            
+            count_to_delete = cursor.fetchone()[0]
+            
+            # Delete old records
+            cursor.execute('''
+                DELETE FROM processed_transactions 
+                WHERE processed_at < ?
+            ''', (cutoff_date,))
+            
+            conn.commit()
+            conn.close()
+            
+            # Also clean up in-memory cache
+            self._load_processed_transactions()
+            
+            logger.info(f"Đã cleanup {count_to_delete} processed transactions cũ hơn {days_to_keep} ngày")
+            
+        except Exception as e:
+            logger.error("Lỗi cleanup processed transactions", error=str(e))
+    
+    def get_processed_transactions_stats(self) -> Dict[str, Any]:
+        """Get statistics about processed transactions"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Count total records in database
+            cursor.execute('SELECT COUNT(*) FROM processed_transactions')
+            total_in_db = cursor.fetchone()[0]
+            
+            # Count by date ranges
+            now = datetime.now()
+            today = now.date().isoformat()
+            last_7_days = (now - timedelta(days=7)).isoformat()
+            last_30_days = (now - timedelta(days=30)).isoformat()
+            
+            cursor.execute('SELECT COUNT(*) FROM processed_transactions WHERE processed_at >= ?', (today,))
+            today_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM processed_transactions WHERE processed_at >= ?', (last_7_days,))
+            week_count = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM processed_transactions WHERE processed_at >= ?', (last_30_days,))
+            month_count = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            return {
+                "total_in_memory": len(self.processed_transactions),
+                "total_in_database": total_in_db,
+                "processed_today": today_count,
+                "processed_last_7_days": week_count,
+                "processed_last_30_days": month_count
+            }
+            
+        except Exception as e:
+            logger.error("Lỗi lấy stats processed transactions", error=str(e))
+            return {
+                "total_in_memory": len(self.processed_transactions),
+                "total_in_database": 0,
+                "error": str(e)
+            }
     
     async def _validate_transaction_data(self, transaction_data: TransactionData) -> Dict[str, Any]:
 
@@ -232,10 +397,16 @@ class WebhookProcessor:
             }
     
     def get_processing_stats(self) -> Dict[str, Any]:
-        return {
+        basic_stats = {
             "total_processed": len(self.processed_transactions),
             "service_status": "healthy"
         }
+        
+        # Add detailed stats
+        detailed_stats = self.get_processed_transactions_stats()
+        basic_stats.update(detailed_stats)
+        
+        return basic_stats
     
     async def _save_webhook_to_file(self, webhook_data: WebhookRequest):
         try:
